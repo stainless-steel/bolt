@@ -27,7 +27,7 @@ Your contribution is highly appreciated. Do not hesitate to open an issue or a
 pull request. Note that any contribution submitted for inclusion in the project
 will be licensed according to the terms given in [LICENSE.md](LICENSE.md).
 
-[build-img]: https://github.com/stainless-steel/bolt/actions/workflows/build/badge.svg
+[build-img]: https://github.com/stainless-steel/bolt/actions/workflows/build.yml/badge.svg
 [build-url]: https://github.com/stainless-steel/bolt/actions/workflows/build.yml
 [documentation-img]: https://docs.rs/bolt/badge.svg
 [documentation-url]: https://docs.rs/bolt
