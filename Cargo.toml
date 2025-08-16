@@ -9,7 +9,7 @@ documentation = "https://docs.rs/bolt"
 homepage = "https://github.com/stainless-steel/bolt"
 repository = "https://github.com/stainless-steel/bolt"
 categories = ["asynchronous", "concurrency"]
-keywords = []
+keywords = ["lock", "mutex", "tokio"]
 
 [dependencies]
 papaya = "0.2"
