@@ -5,10 +5,12 @@ use std::sync::Arc;
 use papaya::HashMap;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
+const SEPARATOR: u8 = b'/';
+
 /// A lock.
 #[derive(Default)]
 pub struct Lock {
-    inner: HashMap<String, Arc<RwLock<()>>>,
+    inner: HashMap<Vec<u8>, Arc<RwLock<()>>>,
 }
 
 /// A guard.
@@ -25,25 +27,41 @@ pub type WriteGuard = OwnedRwLockWriteGuard<()>;
 
 impl Lock {
     /// Acquire the lock for reading.
-    pub async fn read<T: Into<String>>(&self, value: T) -> Guard {
-        let value = value.into();
-        let lock = self
-            .inner
-            .pin()
-            .get_or_insert_with(value, Default::default)
-            .clone();
-        Guard::Read(lock.read_owned().await)
+    pub async fn read<T: AsRef<[u8]>>(&self, path: T) -> Vec<Guard> {
+        let path = path.as_ref();
+        let paths = partition(path);
+        let mut guards = Vec::with_capacity(paths.len());
+        for path in paths {
+            let path = path.to_vec();
+            let lock = self
+                .inner
+                .pin()
+                .get_or_insert_with(path, Default::default)
+                .clone();
+            guards.push(Guard::Read(lock.read_owned().await));
+        }
+        guards
     }
 
     /// Acquire the lock for writing.
-    pub async fn write<T: Into<String>>(&self, value: T) -> Guard {
-        let value = value.into();
-        let lock = self
-            .inner
-            .pin()
-            .get_or_insert_with(value, Default::default)
-            .clone();
-        Guard::Write(lock.write_owned().await)
+    pub async fn write<T: AsRef<[u8]>>(&self, path: T) -> Vec<Guard> {
+        let path = path.as_ref();
+        let paths = partition(path);
+        let mut guards = Vec::with_capacity(paths.len());
+        for (index, path) in paths.into_iter().enumerate() {
+            let path = path.to_vec();
+            let lock = self
+                .inner
+                .pin()
+                .get_or_insert_with(path, Default::default)
+                .clone();
+            if index == 0 {
+                guards.push(Guard::Write(lock.write_owned().await));
+            } else {
+                guards.push(Guard::Read(lock.read_owned().await));
+            }
+        }
+        guards
     }
 }
 
@@ -57,6 +75,23 @@ impl Guard {
     }
 }
 
+fn partition(value: &[u8]) -> Vec<&[u8]> {
+    let count = value.len();
+    value
+        .iter()
+        .enumerate()
+        .filter_map(|(index, character)| {
+            if *character == SEPARATOR {
+                Some(&value[..index])
+            } else if index + 1 == count {
+                Some(value)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::Lock;
@@ -64,12 +99,40 @@ mod tests {
     macro_rules! ok(($result:expr) => ($result.unwrap()));
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn write() {
+    async fn two_dependent_readers() {
         let lock = Lock::default();
         let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
 
         {
-            let guard = lock.write("head/body/tail").await;
+            let guard = lock.read("a/b/c").await;
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                ok!(sender.send(2).await);
+                std::mem::drop(guard);
+            });
+        }
+
+        {
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                let _guard = lock.read("a/b/c").await;
+                ok!(sender.send(1).await);
+            });
+        }
+
+        for index in [1, 2] {
+            assert_eq!(receiver.recv().await, Some(index));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn two_dependent_writers() {
+        let lock = Lock::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+
+        {
+            let guard = lock.write("a/b/c").await;
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -77,15 +140,45 @@ mod tests {
                 std::mem::drop(guard);
             });
         }
+
         {
             let sender = sender.clone();
             tokio::task::spawn(async move {
-                let _guard = lock.write("head/body/tail").await;
+                let _guard = lock.write("a/b/c").await;
                 ok!(sender.send(2).await);
             });
         }
 
-        assert_eq!(receiver.recv().await, Some(1));
-        assert_eq!(receiver.recv().await, Some(2));
+        for index in [1, 2] {
+            assert_eq!(receiver.recv().await, Some(index));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn two_independent_writers() {
+        let lock = Lock::default();
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+
+        {
+            let guard = lock.write("a/b/c").await;
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                ok!(sender.send(2).await);
+                std::mem::drop(guard);
+            });
+        }
+
+        {
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                let _guard = lock.write("d/e/f").await;
+                ok!(sender.send(1).await);
+            });
+        }
+
+        for index in [1, 2] {
+            assert_eq!(receiver.recv().await, Some(index));
+        }
     }
 }
