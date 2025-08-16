@@ -7,10 +7,10 @@
 //! ensures that
 //!
 //! * a writer is given access to a segment only when the segment is not currently being read from
-//! or written into and is not nested in a segment that is currently being written into, and that
+//!   or written into and is not nested in a segment that is currently being written into, and that
 //!
 //! * a reader is given access to a segment only when the segment is not currently being written
-//! into and is not nested in a segment that is currently being written into.
+//!   into and is not nested in a segment that is currently being written into.
 //!
 //! For instance, one can concurrently write into `a/b/c` and `a/b/d` and read from `a` and `a/b`.
 //! However, reading from or writing into `a/b/c` or `a/b/d` would have to wait for `a/b` if the
