@@ -26,20 +26,22 @@ pub type WriteGuard = OwnedRwLockWriteGuard<()>;
 impl Lock {
     /// Acquire the lock for reading.
     pub async fn read<T: Into<String>>(&self, value: T) -> Guard {
-        let lock: Arc<RwLock<()>> = self
+        let value = value.into();
+        let lock = self
             .inner
             .pin()
-            .get_or_insert_with(value.into(), Default::default)
+            .get_or_insert_with(value, Default::default)
             .clone();
         Guard::Read(lock.read_owned().await)
     }
 
     /// Acquire the lock for writing.
     pub async fn write<T: Into<String>>(&self, value: T) -> Guard {
-        let lock: Arc<RwLock<()>> = self
+        let value = value.into();
+        let lock = self
             .inner
             .pin()
-            .get_or_insert_with(value.into(), Default::default)
+            .get_or_insert_with(value, Default::default)
             .clone();
         Guard::Write(lock.write_owned().await)
     }
