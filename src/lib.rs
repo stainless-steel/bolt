@@ -48,7 +48,6 @@ impl Lock {
         let paths = partition(path);
         let mut guards = Vec::with_capacity(paths.len());
         for path in paths {
-            let path = path.to_vec();
             let lock = self
                 .inner
                 .pin()
@@ -65,7 +64,6 @@ impl Lock {
         let paths = partition(path);
         let mut guards = Vec::with_capacity(paths.len());
         for (index, path) in paths.into_iter().enumerate() {
-            let path = path.to_vec();
             let lock = self
                 .inner
                 .pin()
@@ -91,16 +89,16 @@ impl Guard {
     }
 }
 
-fn partition(value: &[u8]) -> Vec<&[u8]> {
+fn partition(value: &[u8]) -> Vec<Vec<u8>> {
     let count = value.len();
     value
         .iter()
         .enumerate()
         .filter_map(|(index, character)| {
             if *character == SEPARATOR {
-                Some(&value[..index])
+                Some((&value[..index]).to_vec())
             } else if index + 1 == count {
-                Some(value)
+                Some(value.to_vec())
             } else {
                 None
             }
