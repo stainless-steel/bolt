@@ -93,12 +93,11 @@ fn partition(value: &[u8]) -> Vec<Vec<u8>> {
     let count = value.len();
     value
         .iter()
+        .rev()
         .enumerate()
         .filter_map(|(index, character)| {
-            if *character == SEPARATOR {
-                Some((&value[..index]).to_vec())
-            } else if index + 1 == count {
-                Some(value.to_vec())
+            if index == 0 || *character == SEPARATOR {
+                Some((&value[..(count - index)]).to_vec())
             } else {
                 None
             }
