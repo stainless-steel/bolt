@@ -96,8 +96,10 @@ fn partition(value: &[u8]) -> Vec<Vec<u8>> {
         .rev()
         .enumerate()
         .filter_map(|(index, character)| {
-            if index == 0 || *character == SEPARATOR {
-                Some((&value[..(count - index)]).to_vec())
+            if index == 0 {
+                Some(value.to_vec())
+            } else if *character == SEPARATOR {
+                Some((&value[..(count - index - 1)]).to_vec())
             } else {
                 None
             }
@@ -107,21 +109,23 @@ fn partition(value: &[u8]) -> Vec<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::Lock;
 
     macro_rules! ok(($result:expr) => ($result.unwrap()));
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn two_dependent_readers() {
+    async fn read_independent() {
         let lock = Lock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
             let guard = lock.read("a/b/c").await;
             let sender = sender.clone();
             tokio::task::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                ok!(sender.send(2).await);
+                work(1).await;
+                ok!(sender.send(2));
                 std::mem::drop(guard);
             });
         }
@@ -130,7 +134,7 @@ mod tests {
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 let _guard = lock.read("a/b/c").await;
-                ok!(sender.send(1).await);
+                ok!(sender.send(1));
             });
         }
 
@@ -140,16 +144,16 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn two_dependent_writers() {
+    async fn write_dependent() {
         let lock = Lock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
             let guard = lock.write("a/b/c").await;
             let sender = sender.clone();
             tokio::task::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                ok!(sender.send(1).await);
+                work(1).await;
+                ok!(sender.send(1));
                 std::mem::drop(guard);
             });
         }
@@ -158,7 +162,7 @@ mod tests {
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 let _guard = lock.write("a/b/c").await;
-                ok!(sender.send(2).await);
+                ok!(sender.send(2));
             });
         }
 
@@ -168,16 +172,16 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn two_independent_writers() {
+    async fn write_independent() {
         let lock = Lock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
             let guard = lock.write("a/b/c").await;
             let sender = sender.clone();
             tokio::task::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                ok!(sender.send(2).await);
+                work(1).await;
+                ok!(sender.send(2));
                 std::mem::drop(guard);
             });
         }
@@ -186,12 +190,53 @@ mod tests {
             let sender = sender.clone();
             tokio::task::spawn(async move {
                 let _guard = lock.write("a/b/d").await;
-                ok!(sender.send(1).await);
+                ok!(sender.send(1));
             });
         }
 
         for index in [1, 2] {
             assert_eq!(receiver.recv().await, Some(index));
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn write_read_independent_dependent() {
+        let lock = Arc::new(Lock::default());
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        {
+            let guard = lock.write("a/b/c").await;
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                work(1).await;
+                ok!(sender.send(2));
+                std::mem::drop(guard);
+            });
+        }
+
+        {
+            let lock = lock.clone();
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                let _guard = lock.read("a/b").await;
+                ok!(sender.send(1));
+            });
+        }
+
+        {
+            let sender = sender.clone();
+            tokio::task::spawn(async move {
+                let _guard = lock.read("a/b/c/d").await;
+                ok!(sender.send(3));
+            });
+        }
+
+        for index in [1, 2, 3] {
+            assert_eq!(receiver.recv().await, Some(index));
+        }
+    }
+
+    async fn work(load: u64) {
+        tokio::time::sleep(std::time::Duration::from_secs(4 * load)).await;
     }
 }
