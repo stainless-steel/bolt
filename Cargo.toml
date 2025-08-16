@@ -1,0 +1,14 @@
+[package]
+name = "bolt"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+authors = ["Ivan Ukhov <ivan.ukhov@gmail.com>"]
+description = "The package provides a hierarchical read-write lock."
+documentation = "https://docs.rs/bolt"
+homepage = "https://github.com/stainless-steel/bolt"
+repository = "https://github.com/stainless-steel/bolt"
+categories = ["asynchronous", "concurrency"]
+keywords = []
+
+[dependencies]
