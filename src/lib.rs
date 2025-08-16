@@ -44,15 +44,9 @@ pub type WriteGuard = OwnedRwLockWriteGuard<()>;
 impl Lock {
     /// Acquire the lock for reading.
     pub async fn read<T: AsRef<[u8]>>(&self, path: T) -> Vec<Guard> {
-        let path = path.as_ref();
-        let paths = partition(path);
-        let mut guards = Vec::with_capacity(paths.len());
-        for path in paths {
-            let lock = self
-                .inner
-                .pin()
-                .get_or_insert_with(path, Default::default)
-                .clone();
+        let mut guards = vec![];
+        for path in partition(path.as_ref()) {
+            let lock = self.lock(path);
             guards.push(Guard::Read(lock.read_owned().await));
         }
         guards
@@ -60,15 +54,9 @@ impl Lock {
 
     /// Acquire the lock for writing.
     pub async fn write<T: AsRef<[u8]>>(&self, path: T) -> Vec<Guard> {
-        let path = path.as_ref();
-        let paths = partition(path);
-        let mut guards = Vec::with_capacity(paths.len());
-        for (index, path) in paths.into_iter().enumerate() {
-            let lock = self
-                .inner
-                .pin()
-                .get_or_insert_with(path, Default::default)
-                .clone();
+        let mut guards = vec![];
+        for (index, path) in partition(path.as_ref()).enumerate() {
+            let lock = self.lock(path);
             if index == 0 {
                 guards.push(Guard::Write(lock.write_owned().await));
             } else {
@@ -76,6 +64,19 @@ impl Lock {
             }
         }
         guards
+    }
+
+    fn lock(&self, path: &[u8]) -> Arc<RwLock<()>> {
+        match self.inner.pin().get(path).cloned() {
+            Some(value) => value,
+            _ => {
+                let path = path.to_vec();
+                self.inner
+                    .pin()
+                    .get_or_insert_with(path, Default::default)
+                    .clone()
+            }
+        }
     }
 }
 
@@ -89,22 +90,21 @@ impl Guard {
     }
 }
 
-fn partition(value: &[u8]) -> Vec<Vec<u8>> {
+fn partition(value: &[u8]) -> impl Iterator<Item = &[u8]> {
     let count = value.len();
     value
         .iter()
         .rev()
         .enumerate()
-        .filter_map(|(index, character)| {
+        .filter_map(move |(index, character)| {
             if index == 0 {
-                Some(value.to_vec())
+                Some(value)
             } else if *character == SEPARATOR {
-                Some((&value[..(count - index - 1)]).to_vec())
+                Some(&value[..(count - index - 1)])
             } else {
                 None
             }
         })
-        .collect()
 }
 
 #[cfg(test)]
