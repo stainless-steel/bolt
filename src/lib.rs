@@ -186,7 +186,7 @@ mod tests {
         {
             let sender = sender.clone();
             tokio::task::spawn(async move {
-                let _guard = lock.write("d/e/f").await;
+                let _guard = lock.write("a/b/d").await;
                 ok!(sender.send(1).await);
             });
         }
