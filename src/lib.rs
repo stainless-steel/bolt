@@ -69,13 +69,10 @@ pub type ReadGuard = OwnedRwLockReadGuard<()>;
 /// A write guard.
 pub type WriteGuard = OwnedRwLockWriteGuard<()>;
 
-impl<const N: usize> Lock<N>
-where
-    [Option<Guard>; N]: Default,
-{
+impl<const N: usize> Lock<N> {
     /// Acquire the lock for reading.
     pub async fn read<T: AsRef<[u8]>>(&self, path: T) -> [Option<Guard>; N] {
-        let mut guards: [Option<Guard>; N] = Default::default();
+        let mut guards: [Option<Guard>; N] = [const { None }; N];
         for (index, path) in partition(path.as_ref()).take(N).enumerate() {
             let lock = self.lock(path);
             guards[index] = Some(Guard::Read(lock.read_owned().await));
@@ -85,7 +82,7 @@ where
 
     /// Acquire the lock for writing.
     pub async fn write<T: AsRef<[u8]>>(&self, path: T) -> [Option<Guard>; N] {
-        let mut guards: [Option<Guard>; N] = Default::default();
+        let mut guards: [Option<Guard>; N] = [const { None }; N];
         for (index, path) in partition(path.as_ref()).take(N).enumerate() {
             let lock = self.lock(path);
             if index == 0 {
