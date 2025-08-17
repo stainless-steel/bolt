@@ -2,8 +2,6 @@
 
 The package provides a hierarchical read-write lock.
 
-## Usage
-
 Given a hierarchical path defined as a sequence of progressively nested segments
 separated by slashes—as in `a/b/c` where `c` is nested in `b` and `a`, and `b`
 is nested in `a`—the locking mechanism ensures that
@@ -20,6 +18,28 @@ For instance, one can concurrently write into `a/b/c` and `a/b/d` and read from
 `a` and `a/b`. However, reading from or writing into `a/b/c` or `a/b/d` would
 have to wait for `a/b` if the last was acquired for writing, but one would be
 able to read from `a`.
+
+# Usage
+
+```rust
+const N: usize = 10;
+
+let lock = std::sync::Arc::new(bolt::Lock::<N>::default());
+
+{
+    let lock = lock.clone();
+    tokio::task::spawn(async move {
+        let _guards = lock.write("a/b/c").await;
+    });
+}
+
+{
+    let lock = lock.clone();
+    tokio::task::spawn(async move {
+        let _guards = lock.write("a/b/d").await;
+    });
+}
+```
 
 ## Contribution
 
