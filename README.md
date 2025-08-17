@@ -5,16 +5,16 @@ The package provides a hierarchical read-write lock.
 ## Usage
 
 Given a hierarchical path defined as a sequence of progressively nested segments
-separated by slashes—as in `a/b/c` where `c` is nested in `a` and `b` and `b` in
-`a`—the locking mechanism ensures that
+separated by slashes—as in `a/b/c` where `c` is nested in `b` and `a`, and `b`
+is nested in `a`—the locking mechanism ensures that
 
-* each writer is given access to a segment only when the segment is not
-  currently being read from or written into and is not nested in a segment that
-  is currently being written into, and that
+* a writer is given access to the path only when the last segment is not
+  currently being read from or written into and is not nested in any segment
+  that is currently being written into, and that
 
-* each reader is given access to a segment only when the segment is not
-  currently being written into and is not nested in a segment that is currently
-  being written into.
+* a reader is given access to the path only when the last segment is not
+  currently being written into and is not nested in any segment that is
+  currently being written into.
 
 For instance, one can concurrently write into `a/b/c` and `a/b/d` and read from
 `a` and `a/b`. However, reading from or writing into `a/b/c` or `a/b/d` would

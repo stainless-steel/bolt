@@ -3,15 +3,15 @@
 //! # Usage
 //!
 //! Given a hierarchical path defined as a sequence of progressively nested segments separated by
-//! slashes—as in `a/b/c` where `c` is nested in `a` and `b` and `b` in `a`—the locking mechanism
-//! ensures that
+//! slashes—as in `a/b/c` where `c` is nested in `b` and `a`, and `b` is nested in `a`—the locking
+//! mechanism ensures that
 //!
-//! * each writer is given access to a segment only when the segment is not currently being read
-//!   from or written into and is not nested in a segment that is currently being written into, and
-//!   that
+//! * a writer is given access to the path only when the last segment is not currently being read
+//!   from or written into and is not nested in any segment that is currently being written into,
+//!   and that
 //!
-//! * each reader is given access to a segment only when the segment is not currently being written
-//!   into and is not nested in a segment that is currently being written into.
+//! * a reader is given access to the path only when the last segment is not currently being written
+//!   into and is not nested in any segment that is currently being written into.
 //!
 //! For instance, one can concurrently write into `a/b/c` and `a/b/d` and read from `a` and `a/b`.
 //! However, reading from or writing into `a/b/c` or `a/b/d` would have to wait for `a/b` if the
@@ -25,8 +25,12 @@ use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 const SEPARATOR: u8 = b'/';
 
 /// A lock.
+///
+/// The constant generic parameter gives an upper bound on the number of segments to consider
+/// counting from the tail. This is to avoid memory allocation when locking. For instance, given
+/// `a/b/c`, `Lock::<2>` would protect `a/b/c` and `a/b` but not `a`.
 #[derive(Default)]
-pub struct Lock {
+pub struct Lock<const N: usize> {
     inner: HashMap<Vec<u8>, Arc<RwLock<()>>>,
 }
 
@@ -42,26 +46,29 @@ pub type ReadGuard = OwnedRwLockReadGuard<()>;
 /// A write guard.
 pub type WriteGuard = OwnedRwLockWriteGuard<()>;
 
-impl Lock {
+impl<const N: usize> Lock<N>
+where
+    [Option<Guard>; N]: Default,
+{
     /// Acquire the lock for reading.
-    pub async fn read<T: AsRef<[u8]>>(&self, path: T) -> Vec<Guard> {
-        let mut guards = vec![];
-        for path in partition(path.as_ref()) {
+    pub async fn read<T: AsRef<[u8]>>(&self, path: T) -> [Option<Guard>; N] {
+        let mut guards: [Option<Guard>; N] = Default::default();
+        for (index, path) in partition(path.as_ref()).take(N).enumerate() {
             let lock = self.lock(path);
-            guards.push(Guard::Read(lock.read_owned().await));
+            guards[index] = Some(Guard::Read(lock.read_owned().await));
         }
         guards
     }
 
     /// Acquire the lock for writing.
-    pub async fn write<T: AsRef<[u8]>>(&self, path: T) -> Vec<Guard> {
-        let mut guards = vec![];
-        for (index, path) in partition(path.as_ref()).enumerate() {
+    pub async fn write<T: AsRef<[u8]>>(&self, path: T) -> [Option<Guard>; N] {
+        let mut guards: [Option<Guard>; N] = Default::default();
+        for (index, path) in partition(path.as_ref()).take(N).enumerate() {
             let lock = self.lock(path);
             if index == 0 {
-                guards.push(Guard::Write(lock.write_owned().await));
+                guards[index] = Some(Guard::Write(lock.write_owned().await));
             } else {
-                guards.push(Guard::Read(lock.read_owned().await));
+                guards[index] = Some(Guard::Read(lock.read_owned().await));
             }
         }
         guards
@@ -114,11 +121,13 @@ mod tests {
 
     use super::Lock;
 
+    const N: usize = 10;
+
     macro_rules! ok(($result:expr) => ($result.unwrap()));
 
     #[tokio::test(flavor = "multi_thread")]
     async fn read_independent() {
-        let lock = Lock::default();
+        let lock = Lock::<N>::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
@@ -146,7 +155,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn write_dependent() {
-        let lock = Lock::default();
+        let lock = Lock::<N>::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
@@ -174,7 +183,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn write_independent() {
-        let lock = Lock::default();
+        let lock = Lock::<N>::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
@@ -202,7 +211,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn write_read_independent_dependent() {
-        let lock = Arc::new(Lock::default());
+        let lock = Arc::new(Lock::<N>::default());
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         {
