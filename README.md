@@ -19,7 +19,7 @@ For instance, one can concurrently write into `a/b/c` and `a/b/d` and read from
 have to wait for `a/b` if the last was acquired for writing, but one would be
 able to read from `a`.
 
-# Usage
+## Usage
 
 ```rust
 const N: usize = 10;
